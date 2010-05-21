@@ -5,7 +5,7 @@ LIBS	= `pth-config --libs`
 
 all: server client
 server: server.o
-	$(CC) $(LDFLAGS) -lrt	 -o server server.o $(LIBS)
+	$(CC) $(LDFLAGS) -g -O2 -lrt -o server objects/*.o server.o $(LIBS)
 server.o: server.cpp
 	$(CC) $(CFLAGS) -c server.cpp
 client: client.o
