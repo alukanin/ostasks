@@ -11,13 +11,18 @@
  * 	process_A:err - > process_C:in
  */
 
-#define BUFSIZE 50
+#define BUFSIZE 200
 int pipe_out_to_in[2];
 int pipe_err_to_in[2];
 int child1_pid, child2_pid, child3_pid;
 
 void error() {
     printf("Use it this way: \"prA | prB prC\"\n");
+}
+
+inline void termprint(int pid)
+{
+	printf("Process %d terminated.\n", pid);
 }
 
 void myclose(int p) {
@@ -155,7 +160,7 @@ int main() {
             // It's process_B
             if (dup2(pipe_err_to_in[0], STDIN_FILENO) == -1) {
                 perror(inpStr + prA_offset);
-                exit(0);
+
             }
             myclose(2);
             execlp(inpStr + prB_offset, inpStr + prB_offset, NULL);
@@ -182,11 +187,15 @@ int main() {
             continue;
         }
 
+	myclose(2);
         int status;
         child1_pid = wait(&status);
+        //termprint(child1_pid);
+	child1_pid = wait(&status);
+	//termprint(child1_pid);
         child1_pid = wait(&status);
-        child1_pid = wait(&status);
-        myclose(2);
+	//termprint(child1_pid);
+        //myclose(2);
 
     }
 

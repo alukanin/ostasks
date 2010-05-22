@@ -10,8 +10,16 @@ int main(int argc, char** argv)
     while(1)
     {
         sleep(1);
-	fputs(for_stdout, stdout); fflush(stdout);
-        fputs(for_stderr, stderr);
+ 	if (fputs(for_stdout, stdout) == EOF)
+	{
+		_exit(1);	
+	}
+	fflush(stdout);
+        if (fputs(for_stderr, stderr) == EOF)
+	{
+		_exit(1);
+	}
+	fflush(stderr);
     }
     return 0;
 }

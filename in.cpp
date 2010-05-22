@@ -4,9 +4,13 @@
 int main(int argc, char** argv)
 {
     char* buffer = new char[50];
+    
     while(1)
     {
-        fgets(buffer, 50, stdin);
+        if (fgets(buffer, 50, stdin) == NULL)
+	{
+		_exit(1);
+	}
         printf("Got from STDIN: %s", buffer);
     }
 }
