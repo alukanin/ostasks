@@ -99,18 +99,12 @@ void LifeState::calculate(bool* lifeField, bool* newLifeField) {
         if (i <= FIELD_X_SIZE * FIELD_Y_SIZE - FIELD_X_SIZE)
             if (lifeField[i + FIELD_X_SIZE]) nbQ++;
 
-
-
-        if (!lifeField[i]) {
-
-            if (nbQ == 3)
-                newLifeField[i] = true;
-            else newLifeField[i] = lifeField[i];
-        } else {
-            if (nbQ == 2 || nbQ == 3)
-                newLifeField[i] = true;
+    
+	if ((lifeField[i] && nbQ == 2) || nbQ == 3) {
+		newLifeField[i] = true;
+	}
+          
             else newLifeField[i] = false;
-        }
     }
 }
 
@@ -150,16 +144,16 @@ static void *clientHandler(void *_arg) {
 
     while (1) {
         if (!pth_read(socket, &code, sizeof (int))) {
-            close(socket);
-            return NULL;
+            break;
         }
-        if (code != 666)
-            continue;
+
+        if (code != 666) {
+            break;
+	}
 
         if (!pth_write(socket, &LifeState::FIELD_X_SIZE, sizeof (int)) ||
                 !pth_write(socket, &LifeState::FIELD_Y_SIZE, sizeof (int))) {
-            close(socket);
-            return NULL;
+            break;
         }
         field = currentField;
         field->value->lock();
@@ -170,11 +164,12 @@ static void *clientHandler(void *_arg) {
         //}
         if (!pth_write(socket, field->value->getArray(), fieldSize)) {
             field->value->release();
-            close(socket);
-            return NULL;
+            break;
         }
         field->value->release();
     }
+    close(socket);
+    return NULL;
 }
 
 int theLifeProcess(void* arg) {
