@@ -6,17 +6,18 @@
 #include <cstddef>
 #include <netinet/in.h>
 #include <netdb.h>
-#include <pth.h>
+#include "pth.h"
 #include <unistd.h>
 #include <fstream>
 #include <aio.h>
 #include <string.h>
 
 #define DELAYSECS 1
-#define FIELDSN 10
+#define FIELDSN 15
 #define STACKSIZE 65536
 
 static int fieldXSize = 10, fieldYSize = 10;
+
 struct list_node {
     list_node* next;
     bool* value;
@@ -185,7 +186,7 @@ int main(int argc, char** argv) {
         }
 
         if (pth_spawn(attr, clientHandler, (void*) newClient) == NULL)
-            close(newClient);
+        	close(newClient);
     }
 
     return 0;
