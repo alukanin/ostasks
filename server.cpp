@@ -13,13 +13,20 @@
 #include <string.h>
 
 #define DELAYSECS 1
+#define FIELDSN 10
 #define STACKSIZE 65536
 
 static int fieldXSize = 10, fieldYSize = 10;
-static bool *currentField;
+struct list_node {
+    list_node* next;
+    bool* value;
 
-void sig_handler(int sig) {
-}
+    list_node() {
+        value = new bool[fieldXSize * fieldYSize];
+    }
+};
+
+static list_node* currentField;
 
 void nextConfiguration(bool* lifeField, bool* newLifeField) {
     int i, j, nbQ, k;
@@ -76,11 +83,9 @@ static void *clientHandler(void *_arg) {
     my_aiocb.aio_nbytes = fieldXSize * fieldYSize * sizeof (bool);
     my_aiocb.aio_offset = 0;
 
-    //printf("New client connected\n");
     while (1) {
         if (!pth_read(socket, &code, sizeof (int))) {
             close(socket);
-            //printf("Client disconnected\n");
             return NULL;
         }
         if (code != 666)
@@ -89,34 +94,21 @@ static void *clientHandler(void *_arg) {
         if (!pth_write(socket, &fieldXSize, sizeof (int)) ||
                 !pth_write(socket, &fieldYSize, sizeof (int))) {
             close(socket);
-            //printf("Client disconnected\n");
             return NULL;
         }
-        my_aiocb.aio_buf = (void*) currentField;
+        my_aiocb.aio_buf = (void*) currentField->value;
         aio_write(&my_aiocb);
     }
 }
 
 int theLifeProcess(void* arg) {
 
-    bool* secondField;
-    bool* firstField;
-    bool* temp;
-    firstField = currentField;
-
-    // Allocate another field memory for recalculation.
-    secondField = new bool[fieldXSize * fieldYSize];
-
     // Do a delay for a sec and then recalculate the configuration
     while (1) {
         sleep(DELAYSECS);
-        nextConfiguration(firstField, secondField);
-        currentField = secondField;
+        nextConfiguration(currentField->value, currentField->next->value);
+        currentField = currentField->next;
 
-        // Swap fields
-        temp = firstField;
-        firstField = secondField;
-        secondField = temp;
     }
     _exit(0);
 }
@@ -128,15 +120,26 @@ int main(int argc, char** argv) {
     ssInfo.sin_family = AF_INET;
     ssInfo.sin_port = htons(3427);
     ssInfo.sin_addr.s_addr = htonl(INADDR_ANY);
+    int i;
 
 
     std::ifstream lifeFile("./life.txt");
     lifeFile >> fieldXSize >> fieldYSize;
 
-    // Allocate memory for the Life field
-    currentField = new bool[fieldXSize * fieldYSize];
-    for (int i = 0; i < fieldXSize * fieldYSize; i++) {
-        lifeFile >> currentField[i];
+    // Allocate memory for the Life fields
+    list_node* firstField = new list_node();
+    firstField->next = firstField;
+
+    list_node* field;
+    for (i = 1, currentField = firstField; i < FIELDSN; i++) {
+        field = new list_node();
+        currentField->next = field;
+        currentField = field;
+    }
+    currentField->next = firstField;
+
+    for (i = 0; i < fieldXSize * fieldYSize; i++) {
+        lifeFile >> currentField->value[i];
     }
 
 
