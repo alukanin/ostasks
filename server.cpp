@@ -15,17 +15,32 @@
 #define DELAYSECS 1
 #define FIELDSN 15
 #define STACKSIZE 65536
+#define CLEANERDELAY 5
 
 static int fieldXSize = 10, fieldYSize = 10;
 
 struct list_node {
+private:
+    static int counter;
+public:
     list_node* next;
     bool* value;
+    int clients;
+    int num;
 
     list_node() {
+        num = counter++;
+        clients = 0;
+        next = NULL;
         value = new bool[fieldXSize * fieldYSize];
     }
+
+    virtual ~list_node() {
+        delete value;
+        printf("Field #%d is dead now.\n", num);
+    }
 };
+int list_node::counter = 0;
 
 static list_node* currentField;
 
@@ -78,11 +93,14 @@ static void *clientHandler(void *_arg) {
 
     int socket = (int) _arg;
     int code = 0;
-    struct aiocb my_aiocb;
-    memset(&my_aiocb, 0, sizeof (struct aiocb));
-    my_aiocb.aio_fildes = socket;
-    my_aiocb.aio_nbytes = fieldXSize * fieldYSize * sizeof (bool);
-    my_aiocb.aio_offset = 0;
+    list_node *field;
+
+    //struct aiocb my_aiocb;
+    //memset(&my_aiocb, 0, sizeof (struct aiocb));
+    //my_aiocb.aio_fildes = socket;
+    //my_aiocb.aio_nbytes = fieldXSize * fieldYSize * sizeof (bool);
+    //my_aiocb.aio_offset = 0;
+    int fieldSize = fieldXSize * fieldYSize * sizeof (bool);
 
     while (1) {
         if (!pth_read(socket, &code, sizeof (int))) {
@@ -97,21 +115,46 @@ static void *clientHandler(void *_arg) {
             close(socket);
             return NULL;
         }
-        my_aiocb.aio_buf = (void*) currentField->value;
-        aio_write(&my_aiocb);
+        //my_aiocb.aio_buf = (void*) currentField->value;
+        //aio_write(&my_aiocb);
+        field = currentField;
+        field->clients++;
+        if (!pth_write(socket, field->value, fieldSize)) {
+            field->clients--;
+            close(socket);
+            return NULL;
+        }
+        field->clients--;
     }
 }
 
 int theLifeProcess(void* arg) {
-
     // Do a delay for a sec and then recalculate the configuration
+    list_node* newField;
     while (1) {
         sleep(DELAYSECS);
-        nextConfiguration(currentField->value, currentField->next->value);
-        currentField = currentField->next;
-
+        newField = new list_node();
+        nextConfiguration(currentField->value, newField->value);
+        newField->next = currentField;
+        currentField = newField;
+        printf("State #%d 's been calculated.\n", currentField->num);
     }
     _exit(0);
+}
+
+static void *cleaner(void *_arg) {
+    list_node* prev, *curr;
+    while (1) {
+        pth_sleep(CLEANERDELAY);
+        prev = currentField;
+        while ((curr = prev->next) != NULL) {
+            if (curr->clients == 0) {
+                prev->next = curr->next;
+                delete curr;
+            } else prev = curr;
+        }
+
+    }
 }
 
 int main(int argc, char** argv) {
@@ -128,17 +171,7 @@ int main(int argc, char** argv) {
     lifeFile >> fieldXSize >> fieldYSize;
 
     // Allocate memory for the Life fields
-    list_node* firstField = new list_node();
-    firstField->next = firstField;
-
-    list_node* field;
-    for (i = 1, currentField = firstField; i < FIELDSN; i++) {
-        field = new list_node();
-        currentField->next = field;
-        currentField = field;
-    }
-    currentField->next = firstField;
-
+    currentField = new list_node();
     for (i = 0; i < fieldXSize * fieldYSize; i++) {
         lifeFile >> currentField->value[i];
     }
@@ -150,8 +183,14 @@ int main(int argc, char** argv) {
         _exit(1);
     }
 
+
+    // Pth configuring
     pth_attr_t attr;
     pth_init();
+    attr = pth_attr_new();
+    pth_attr_set(attr, PTH_ATTR_STACK_SIZE, 64 * 1024);
+    pth_attr_set(attr, PTH_ATTR_JOINABLE, FALSE);
+    pth_attr_set(attr, PTH_ATTR_NAME, "cleaner");
 
     // Configure the tcp server listener
     int serverSocket = socket(AF_INET, SOCK_STREAM, 0);
@@ -169,10 +208,11 @@ int main(int argc, char** argv) {
         _exit(1);
     }
 
-    // Do all the threads configure stuff
-    attr = pth_attr_new();
-    pth_attr_set(attr, PTH_ATTR_STACK_SIZE, 64 * 1024);
-    pth_attr_set(attr, PTH_ATTR_JOINABLE, FALSE);
+
+    if (pth_spawn(attr, cleaner, NULL) == NULL)
+        printf("Cleaner starting failed. There's gonna be memory leaks.");
+
+
     pth_attr_set(attr, PTH_ATTR_NAME, "client");
     int peer_len = sizeof (peer_addr);
     while (1) {
@@ -186,7 +226,7 @@ int main(int argc, char** argv) {
         }
 
         if (pth_spawn(attr, clientHandler, (void*) newClient) == NULL)
-        	close(newClient);
+            close(newClient);
     }
 
     return 0;
