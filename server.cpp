@@ -12,64 +12,92 @@
 #include <aio.h>
 #include <string.h>
 
+#define DEBUG
 #define DELAYSECS 1
 #define FIELDSN 15
 #define STACKSIZE 65536
 #define CLEANERDELAY 5
 
-static int fieldXSize = 10, fieldYSize = 10;
-
-struct list_node {
+/*
+ * The Life game state class
+ */
+class LifeState {
 private:
-    static int counter;
+    bool* m_field;
+    static int COUNTER;
+    static void calculate(bool* lifeField, bool* newLifeField);
+    int id;
+    int locks;
 public:
-    list_node* next;
-    bool* value;
-    int clients;
-    int num;
+    static int FIELD_Y_SIZE;
+    static int FIELD_X_SIZE;
 
-    list_node() {
-        num = counter++;
-        clients = 0;
-        next = NULL;
-        value = new bool[fieldXSize * fieldYSize];
+    LifeState() {
+        m_field = new bool[FIELD_Y_SIZE * FIELD_X_SIZE];
+        id = COUNTER++;
+        locks = 0;
     }
 
-    virtual ~list_node() {
-        delete value;
-        printf("Field #%d is dead now.\n", num);
+    virtual ~LifeState() {
+        delete m_field;
+#ifdef  DEBUG
+        printf("State #%d is dead now.\n", id);
+#endif
+    }
+
+    LifeState* getNext() const {
+        LifeState* nextState = new LifeState();
+        calculate(m_field, nextState->m_field);
+#ifdef  DEBUG
+        printf("State #%d has been calculated.\n", nextState->id);
+#endif
+        return nextState;
+    }
+
+    bool* getArray() const {
+        return m_field;
+    }
+
+    void lock() {
+        locks++;
+    }
+
+    void release() {
+        if (locks)
+            locks--;
+    }
+
+    bool isFree() const {
+        return !((bool) locks);
     }
 };
-int list_node::counter = 0;
 
-static list_node* currentField;
-
-void nextConfiguration(bool* lifeField, bool* newLifeField) {
+void LifeState::calculate(bool* lifeField, bool* newLifeField) {
     int i, j, nbQ, k;
 
-    for (i = 0; i < fieldXSize * fieldYSize; i++) {
+    for (i = 0; i < FIELD_X_SIZE * FIELD_Y_SIZE; i++) {
         nbQ = 0;
 
-        if (i % fieldXSize) {
+        if (i % FIELD_X_SIZE) {
             if (lifeField[i - 1]) nbQ++;
-            if (i > fieldXSize)
-                if (lifeField[i - 1 - fieldXSize]) nbQ++;
-            if (i <= fieldXSize * fieldYSize - fieldXSize)
-                if (lifeField[i - 1 + fieldXSize]) nbQ++;
+            if (i > FIELD_X_SIZE)
+                if (lifeField[i - 1 - FIELD_X_SIZE]) nbQ++;
+            if (i <= FIELD_X_SIZE * FIELD_Y_SIZE - FIELD_X_SIZE)
+                if (lifeField[i - 1 + FIELD_X_SIZE]) nbQ++;
         }
 
-        if (i + 1 % fieldXSize) {
+        if (i + 1 % FIELD_X_SIZE) {
             if (lifeField[i + 1]) nbQ++;
-            if (i >= fieldXSize)
-                if (lifeField[i + 1 - fieldXSize]) nbQ++;
-            if (i < fieldXSize * fieldYSize - fieldXSize)
-                if (lifeField[i + 1 + fieldXSize]) nbQ++;
+            if (i >= FIELD_X_SIZE)
+                if (lifeField[i + 1 - FIELD_X_SIZE]) nbQ++;
+            if (i < FIELD_X_SIZE * FIELD_Y_SIZE - FIELD_X_SIZE)
+                if (lifeField[i + 1 + FIELD_X_SIZE]) nbQ++;
         }
 
-        if (i >= fieldXSize)
-            if (lifeField[i - fieldXSize]) nbQ++;
-        if (i <= fieldXSize * fieldYSize - fieldXSize)
-            if (lifeField[i + fieldXSize]) nbQ++;
+        if (i >= FIELD_X_SIZE)
+            if (lifeField[i - FIELD_X_SIZE]) nbQ++;
+        if (i <= FIELD_X_SIZE * FIELD_Y_SIZE - FIELD_X_SIZE)
+            if (lifeField[i + FIELD_X_SIZE]) nbQ++;
 
 
 
@@ -84,9 +112,26 @@ void nextConfiguration(bool* lifeField, bool* newLifeField) {
             else newLifeField[i] = false;
         }
     }
-
-
 }
+
+
+int LifeState::FIELD_Y_SIZE = 10;
+int LifeState::FIELD_X_SIZE = 10;
+int LifeState::COUNTER = 0;
+
+/*
+ *
+ */
+struct list_node {
+    LifeState* value;
+    list_node *next;
+
+    list_node() {
+        value = NULL;
+        next = NULL;
+    }
+};
+static list_node* currentField;
 
 static void *clientHandler(void *_arg) {
 
@@ -94,13 +139,14 @@ static void *clientHandler(void *_arg) {
     int socket = (int) _arg;
     int code = 0;
     list_node *field;
+    int fieldSize = LifeState::FIELD_X_SIZE * LifeState::FIELD_Y_SIZE * sizeof (bool);
 
     //struct aiocb my_aiocb;
     //memset(&my_aiocb, 0, sizeof (struct aiocb));
     //my_aiocb.aio_fildes = socket;
-    //my_aiocb.aio_nbytes = fieldXSize * fieldYSize * sizeof (bool);
+    //my_aiocb.aio_nbytes = fieldSize;
     //my_aiocb.aio_offset = 0;
-    int fieldSize = fieldXSize * fieldYSize * sizeof (bool);
+
 
     while (1) {
         if (!pth_read(socket, &code, sizeof (int))) {
@@ -110,21 +156,24 @@ static void *clientHandler(void *_arg) {
         if (code != 666)
             continue;
 
-        if (!pth_write(socket, &fieldXSize, sizeof (int)) ||
-                !pth_write(socket, &fieldYSize, sizeof (int))) {
+        if (!pth_write(socket, &LifeState::FIELD_X_SIZE, sizeof (int)) ||
+                !pth_write(socket, &LifeState::FIELD_Y_SIZE, sizeof (int))) {
             close(socket);
             return NULL;
         }
-        //my_aiocb.aio_buf = (void*) currentField->value;
-        //aio_write(&my_aiocb);
         field = currentField;
-        field->clients++;
-        if (!pth_write(socket, field->value, fieldSize)) {
-            field->clients--;
+        field->value->lock();
+        //my_aiocb.aio_buf = (void*) field->value->getArray();
+        //aio_write(&my_aiocb);
+        //while (aio_error(&my_aiocb) == EINPROGRESS) {
+        //   pth_yield(NULL);
+        //}
+        if (!pth_write(socket, field->value->getArray(), fieldSize)) {
+            field->value->release();
             close(socket);
             return NULL;
         }
-        field->clients--;
+        field->value->release();
     }
 }
 
@@ -134,10 +183,9 @@ int theLifeProcess(void* arg) {
     while (1) {
         sleep(DELAYSECS);
         newField = new list_node();
-        nextConfiguration(currentField->value, newField->value);
         newField->next = currentField;
+        newField->value = currentField->value->getNext();
         currentField = newField;
-        printf("State #%d 's been calculated.\n", currentField->num);
     }
     _exit(0);
 }
@@ -148,8 +196,9 @@ static void *cleaner(void *_arg) {
         pth_sleep(CLEANERDELAY);
         prev = currentField;
         while ((curr = prev->next) != NULL) {
-            if (curr->clients == 0) {
+            if (curr->value->isFree()) {
                 prev->next = curr->next;
+                delete curr->value;
                 delete curr;
             } else prev = curr;
         }
@@ -168,17 +217,18 @@ int main(int argc, char** argv) {
 
 
     std::ifstream lifeFile("./life.txt");
-    lifeFile >> fieldXSize >> fieldYSize;
+    lifeFile >> LifeState::FIELD_X_SIZE >> LifeState::FIELD_Y_SIZE;
 
     // Allocate memory for the Life fields
     currentField = new list_node();
-    for (i = 0; i < fieldXSize * fieldYSize; i++) {
-        lifeFile >> currentField->value[i];
+    currentField->value = new LifeState();
+    for (i = 0; i < LifeState::FIELD_X_SIZE * LifeState::FIELD_Y_SIZE; i++) {
+        lifeFile >> currentField->value->getArray()[i];
     }
 
 
-    void* child_stack = (void*) malloc(STACKSIZE);
-    if (clone(theLifeProcess, child_stack + STACKSIZE - 1, CLONE_VM, NULL) == -1) {
+    void* child_stack = (void*) ((char*) malloc(STACKSIZE) - 1 + STACKSIZE);
+    if (clone(theLifeProcess, child_stack, CLONE_VM, NULL) == -1) {
         perror("Error");
         _exit(1);
     }
