@@ -8,6 +8,7 @@
 #include <netdb.h>
 #include "pth.h"
 #include <unistd.h>
+#include <iostream>
 #include <fstream>
 #include <aio.h>
 #include <string.h>
@@ -26,22 +27,22 @@ private:
     bool* m_field;
     static int COUNTER;
     static void calculate(bool* lifeField, bool* newLifeField);
-    int id;
-    int locks;
+    int m_id;
+    int m_locks;
 public:
     static int FIELD_Y_SIZE;
     static int FIELD_X_SIZE;
 
     LifeState() {
         m_field = new bool[FIELD_Y_SIZE * FIELD_X_SIZE];
-        id = COUNTER++;
-        locks = 0;
+        m_id = COUNTER++;
+        m_locks = 0;
     }
 
     virtual ~LifeState() {
         delete m_field;
 #ifdef  DEBUG
-        printf("State #%d is dead now.\n", id);
+        printf("State #%d is dead now.\n", m_id);
 #endif
     }
 
@@ -49,28 +50,36 @@ public:
         LifeState* nextState = new LifeState();
         calculate(m_field, nextState->m_field);
 #ifdef  DEBUG
-        printf("State #%d has been calculated.\n", nextState->id);
+        printf("State #%d has been calculated.\n", nextState->m_id);
 #endif
         return nextState;
     }
 
-    bool* getArray() const {
-        return m_field;
+    const bool* getArray() const {
+        return (const bool*) m_field;
     }
 
     void lock() {
-        locks++;
+        m_locks++;
     }
 
     void release() {
-        if (locks)
-            locks--;
+        if (m_locks)
+            m_locks--;
     }
 
     bool isFree() const {
-        return !((bool) locks);
+        return !((bool) m_locks);
     }
+
+    friend std::istream &operator>>(std::istream& file, LifeState& ls);
 };
+
+std::istream &operator>>(std::istream& file, LifeState& ls) {
+    for(int i = 0 ; i < LifeState::FIELD_X_SIZE * LifeState::FIELD_Y_SIZE ; i++) {
+	file >> ls.m_field[i];    
+    }
+}
 
 void LifeState::calculate(bool* lifeField, bool* newLifeField) {
     int i, j, nbQ, k;
@@ -217,9 +226,7 @@ int main(int argc, char** argv) {
     // Allocate memory for the Life fields
     currentField = new list_node();
     currentField->value = new LifeState();
-    for (i = 0; i < LifeState::FIELD_X_SIZE * LifeState::FIELD_Y_SIZE; i++) {
-        lifeFile >> currentField->value->getArray()[i];
-    }
+    lifeFile >> *(currentField->value);
 
 
     void* child_stack = (void*) ((char*) malloc(STACKSIZE) - 1 + STACKSIZE);
@@ -276,3 +283,4 @@ int main(int argc, char** argv) {
 
     return 0;
 }
+
