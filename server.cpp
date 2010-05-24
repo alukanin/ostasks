@@ -127,21 +127,21 @@ int LifeState::COUNTER = 0;
  */
 struct list_node {
     LifeState* value;
-    list_node *next;
+    volatile list_node *next;
 
     list_node() {
         value = NULL;
         next = NULL;
     }
 };
-static list_node* currentField;
+volatile list_node* currentField;
 
 static void *clientHandler(void *_arg) {
 
 
     int socket = (int) _arg;
     int code = 0;
-    list_node *field;
+    volatile list_node *field;
     int fieldSize = LifeState::FIELD_X_SIZE * LifeState::FIELD_Y_SIZE * sizeof (bool);
 
     //struct aiocb my_aiocb;
@@ -183,7 +183,7 @@ static void *clientHandler(void *_arg) {
 
 int theLifeProcess(void* arg) {
     // Do a delay for a sec and then recalculate the configuration
-    list_node* newField;
+    volatile list_node* newField;
     while (1) {
         sleep(DELAYSECS);
         newField = new list_node();
@@ -195,7 +195,7 @@ int theLifeProcess(void* arg) {
 }
 
 static void *cleaner(void *_arg) {
-    list_node* prev, *curr;
+    volatile list_node* prev, *curr;
     while (1) {
         pth_sleep(CLEANERDELAY);
         prev = currentField;
